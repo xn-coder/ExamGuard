@@ -24,6 +24,9 @@ interface AggregatedLog extends UserActivityLog {
   count: number;
 }
 
+// Define BEHAVIOR_ANALYSIS_INTERVAL_MS as it's used in the CardDescription for Live Feeds
+const BEHAVIOR_ANALYSIS_INTERVAL_MS = 10000; // 10 seconds, matches the value in src/app/page.tsx
+
 function AdminPageContent() {
   const [whitelistedUsers, setWhitelistedUsers] = useState<WhitelistedUser[]>([]);
   const [newWhitelistedEmail, setNewWhitelistedEmail] = useState('');
@@ -623,4 +626,3 @@ export default function AdminPage() {
     </AuthGuard>
   );
 }
-
