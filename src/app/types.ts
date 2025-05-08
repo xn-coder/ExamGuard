@@ -1,4 +1,5 @@
 
+
 export interface Question {
   id: string;
   question: string;
@@ -53,5 +54,16 @@ export interface DisqualifiedUser {
   disqualificationTime: string; // ISO date string
   evidence?: string[]; // URLs to screenshots/clips - conceptual for now
   adminId?: string; // UID of the admin whose exam this user was disqualified from
+}
+
+export interface LiveSnapshot {
+  id: string; // Document ID: userId_examId
+  userId: string; // user's Firebase UID
+  userEmail: string;
+  examId: string;
+  examName: string;
+  adminId: string;
+  snapshotDataUri: string;
+  updatedAt: any; // Firebase ServerTimestamp
 }
 

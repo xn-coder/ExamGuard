@@ -11,13 +11,14 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
-import type { WhitelistedUser, ScheduledExam, UserActivityLog, DisqualifiedUser } from '@/app/types';
-import { UserPlus, CalendarPlus, ShieldAlert, Users, Trash2, Search, Eye, ListChecks, LogOut } from 'lucide-react';
+import type { WhitelistedUser, ScheduledExam, UserActivityLog, DisqualifiedUser, LiveSnapshot } from '@/app/types';
+import { UserPlus, CalendarPlus, ShieldAlert, Users, Trash2, Search, Eye, ListChecks, LogOut, Video } from 'lucide-react';
 import { Logo } from '@/components/logo';
 import { AuthGuard } from '@/components/auth-guard';
 import { useAuth } from '@/hooks/useAuth';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs, deleteDoc, doc, query, where, updateDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
+import { collection, addDoc, getDocs, deleteDoc, doc, query, where, updateDoc, serverTimestamp, onSnapshot, orderBy } from 'firebase/firestore';
+import Image from 'next/image';
 
 interface AggregatedLog extends UserActivityLog {
   count: number;
@@ -35,6 +36,7 @@ function AdminPageContent() {
   const [activityLogs, setActivityLogs] = useState<UserActivityLog[]>([]);
   const [aggregatedLogs, setAggregatedLogs] = useState<AggregatedLog[]>([]);
   const [disqualifiedUsers, setDisqualifiedUsers] = useState<DisqualifiedUser[]>([]);
+  const [liveSnapshots, setLiveSnapshots] = useState<LiveSnapshot[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
 
 
@@ -70,12 +72,10 @@ function AdminPageContent() {
   const fetchActivityLogs = useCallback(async (currentSearchTerm: string = searchTerm) => {
     if (!user || !user.uid) return;
     try {
-      // Base query: fetch all logs for the current admin
       const q = query(collection(db, 'activityLogs'), where('adminId', '==', user.uid));
       const querySnapshot = await getDocs(q);
       let logsList = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as UserActivityLog));
 
-      // If a search term is provided, filter client-side
       if (currentSearchTerm) {
         logsList = logsList.filter(log =>
           log.userId.toLowerCase().includes(currentSearchTerm.toLowerCase())
@@ -141,25 +141,35 @@ function AdminPageContent() {
       );
       
       const unsubscribeActivity = onSnapshot(
-        query(collection(db, 'activityLogs'), where('adminId', '==', user.uid)),
+        query(collection(db, 'activityLogs'), where('adminId', '==', user.uid), orderBy('timestamp', 'desc')),
         (snapshot) => {
           let logsList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as UserActivityLog));
-          // If there's an active search term, filter the real-time updates client-side as well
-          // This ensures the live list remains filtered if a search is active
           if (searchTerm) {
             logsList = logsList.filter(log =>
               log.userId.toLowerCase().includes(searchTerm.toLowerCase())
             );
           }
-          setActivityLogs(logsList.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
+          setActivityLogs(logsList); // Already sorted by query
         }, (error) => {
             console.error("Error fetching activity logs in real-time: ", error);
+        }
+      );
+
+      const unsubscribeLiveSnapshots = onSnapshot(
+        query(collection(db, 'liveSnapshots'), where('adminId', '==', user.uid), orderBy('updatedAt', 'desc')),
+        (snapshot) => {
+          const snapshotsList = snapshot.docs.map(docData => ({ id: docData.id, ...docData.data() } as LiveSnapshot));
+          setLiveSnapshots(snapshotsList);
+        }, (error) => {
+          console.error("Error fetching live snapshots: ", error);
+          toast({ variant: 'destructive', title: 'Error', description: 'Could not fetch live snapshots.' });
         }
       );
 
       return () => {
         unsubscribeDisqualified();
         unsubscribeActivity(); 
+        unsubscribeLiveSnapshots();
       };
     }
   }, [user, toast, fetchWhitelistedUsers, fetchScheduledExams, fetchActivityLogs, searchTerm]);
@@ -179,7 +189,7 @@ function AdminPageContent() {
         adminId: user.uid,
       };
       const docRef = await addDoc(collection(db, 'whitelistedUsers'), docData);
-      setWhitelistedUsers(prev => [...prev, { id: docRef.id, ...docData, addedAt: new Date() }]); // Optimistic update with current date
+      setWhitelistedUsers(prev => [...prev, { id: docRef.id, ...docData, addedAt: new Date() }]); 
       setNewWhitelistedEmail('');
       toast({ title: 'User Whitelisted', description: `${newWhitelistedEmail.trim()} can now take exams.` });
     } catch (error) {
@@ -218,7 +228,7 @@ function AdminPageContent() {
         adminId: user.uid,
       };
       const docRef = await addDoc(collection(db, 'scheduledExams'), examData);
-      setScheduledExams(prev => [...prev, { id: docRef.id, ...examData, createdAt: new Date() }]); // Optimistic update
+      setScheduledExams(prev => [...prev, { id: docRef.id, ...examData, createdAt: new Date() }]); 
       setNewExamName('');
       setNewExamTime('');
       setNewExamDuration(60);
@@ -273,8 +283,6 @@ function AdminPageContent() {
       } else {
          toast({ title: 'Disqualification Overridden', description: `User ${userToRestore.email} is no longer disqualified.`});
       }
-      // disqualifiedUsers will update via onSnapshot listener.
-      // fetchWhitelistedUsers(); // Re-fetch to reflect potential re-whitelisting if needed for immediate UI, or rely on state update.
     } catch (error: any) {
       console.error("Error overriding disqualification: ", error);
       if (error.code === 'failed-precondition' && error.message && error.message.toLowerCase().includes('index')) {
@@ -304,11 +312,12 @@ function AdminPageContent() {
 
 
       <Tabs defaultValue="whitelist" className="w-full">
-        <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 mb-6">
+        <TabsList className="grid w-full grid-cols-2 md:grid-cols-5 mb-6">
           <TabsTrigger value="whitelist"><UserPlus className="mr-2 h-4 w-4" />Whitelist Users</TabsTrigger>
           <TabsTrigger value="schedule"><CalendarPlus className="mr-2 h-4 w-4" />Schedule Exams</TabsTrigger>
           <TabsTrigger value="activity"><Eye className="mr-2 h-4 w-4" />Activity Monitor</TabsTrigger>
           <TabsTrigger value="disqualified"><ShieldAlert className="mr-2 h-4 w-4" />Disqualified Users</TabsTrigger>
+          <TabsTrigger value="livefeed"><Video className="mr-2 h-4 w-4" />Live Feeds</TabsTrigger>
         </TabsList>
 
         <TabsContent value="whitelist">
@@ -550,6 +559,54 @@ function AdminPageContent() {
             </CardContent>
           </Card>
         </TabsContent>
+        <TabsContent value="livefeed">
+          <Card className="shadow-xl">
+            <CardHeader>
+              <CardTitle className="flex items-center"><Video className="mr-2" />Live User Snapshots</CardTitle>
+              <CardDescription>View near real-time webcam snapshots of users currently taking exams you manage. Snapshots update every {BEHAVIOR_ANALYSIS_INTERVAL_MS / 1000} seconds.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {liveSnapshots.length === 0 ? (
+                <div className="text-center text-muted-foreground py-10">
+                  <Video className="mx-auto h-12 w-12 mb-4 opacity-50" />
+                  No users are currently taking exams or snapshots are not yet available.
+                </div>
+              ) : (
+                <ScrollArea className="h-[600px] p-1">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {liveSnapshots.map(snapshot => (
+                      <Card key={snapshot.id} className="overflow-hidden">
+                        <CardHeader className="p-3 bg-muted/50 border-b">
+                          <CardTitle className="text-sm font-medium truncate">{snapshot.userEmail}</CardTitle>
+                          <CardDescription className="text-xs truncate">Exam: {snapshot.examName}</CardDescription>
+                        </CardHeader>
+                        <CardContent className="p-0 aspect-[4/3] relative">
+                          {snapshot.snapshotDataUri ? (
+                            <Image
+                              src={snapshot.snapshotDataUri}
+                              alt={`Live snapshot of ${snapshot.userEmail}`}
+                              layout="fill"
+                              objectFit="cover"
+                              data-ai-hint="webcam snapshot"
+                            />
+                          ) : (
+                            <div className="flex items-center justify-center h-full bg-muted text-muted-foreground">
+                              <Video className="h-8 w-8 opacity-50" />
+                              <span className="ml-2">No snapshot</span>
+                            </div>
+                          )}
+                        </CardContent>
+                        <CardFooter className="p-2 text-xs text-muted-foreground border-t">
+                          Last update: {snapshot.updatedAt?.toDate ? snapshot.updatedAt.toDate().toLocaleTimeString() : 'Receiving...'}
+                        </CardFooter>
+                      </Card>
+                    ))}
+                  </div>
+                </ScrollArea>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
       <footer className="text-center text-sm text-muted-foreground py-8 mt-8">
         <p>&copy; {new Date().getFullYear()} ExamGuard Admin. All rights reserved.</p>
@@ -566,3 +623,4 @@ export default function AdminPage() {
     </AuthGuard>
   );
 }
+
