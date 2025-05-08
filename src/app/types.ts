@@ -1,6 +1,7 @@
 
 
 
+
 export interface Question {
   id: string;
   question: string;
@@ -66,6 +67,16 @@ export interface LiveSnapshot {
   adminId: string;
   snapshotDataUri: string;
   updatedAt: any; // Firebase ServerTimestamp
+}
+
+export interface ExamParticipant {
+  email: string; 
+  uid: string;   
+}
+
+export interface ExamHistoryEntry extends ScheduledExam {
+  participants: ExamParticipant[];
+  participantCount: number;
 }
 
 

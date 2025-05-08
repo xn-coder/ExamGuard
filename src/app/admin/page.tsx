@@ -11,9 +11,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { useToast } from '@/hooks/use-toast';
-import type { WhitelistedUser, ScheduledExam, UserActivityLog, DisqualifiedUser, LiveSnapshot } from '@/app/types';
-import { UserPlus, CalendarPlus, ShieldAlert, Users, Trash2, Search, Eye, ListChecks, LogOut, Video } from 'lucide-react';
+import type { WhitelistedUser, ScheduledExam, UserActivityLog, DisqualifiedUser, LiveSnapshot, ExamHistoryEntry, ExamParticipant } from '@/app/types';
+import { UserPlus, CalendarPlus, ShieldAlert, Users, Trash2, Search, Eye, ListChecks, LogOut, Video, Loader2, History as HistoryIcon } from 'lucide-react';
 import { Logo } from '@/components/logo';
 import { AuthGuard } from '@/components/auth-guard';
 import { useAuth } from '@/hooks/useAuth';
@@ -41,6 +42,9 @@ function AdminPageContent() {
   const [disqualifiedUsers, setDisqualifiedUsers] = useState<DisqualifiedUser[]>([]);
   const [liveSnapshots, setLiveSnapshots] = useState<LiveSnapshot[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  const [examHistory, setExamHistory] = useState<ExamHistoryEntry[]>([]);
+  const [isFetchingExamHistory, setIsFetchingExamHistory] = useState(false);
 
 
   const { toast } = useToast();
@@ -92,7 +96,7 @@ function AdminPageContent() {
         toast({
             variant: 'destructive',
             title: 'Database Index Required',
-            description: 'A query for activity logs requires a Firestore index. Please create it in your Firebase console. The required index usually involves "adminId" and "timestamp".',
+            description: 'A query for activity logs requires a Firestore index. Please create it in your Firebase console. The required index usually involves "adminId" (ascending) and "timestamp" (descending) on the "activityLogs" collection.',
             duration: 10000,
         });
       } else {
@@ -100,6 +104,61 @@ function AdminPageContent() {
       }
     }
   }, [user, toast, searchTerm]);
+
+  const fetchExamHistory = useCallback(async () => {
+    if (!user || !user.uid) return;
+    setIsFetchingExamHistory(true);
+    try {
+        const examsQuery = query(collection(db, 'scheduledExams'), where('adminId', '==', user.uid), orderBy('scheduledTime', 'desc'));
+        const examsSnapshot = await getDocs(examsQuery);
+        const allExams = examsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ScheduledExam));
+
+        const historyEntries: ExamHistoryEntry[] = [];
+
+        for (const exam of allExams) {
+            const participantsQuery = query(
+                collection(db, 'activityLogs'),
+                where('adminId', '==', user.uid),
+                where('examId', '==', exam.id),
+                where('activityType', '==', 'exam-start')
+            );
+            const participantsSnapshot = await getDocs(participantsQuery);
+
+            const uniqueParticipants = new Map<string, ExamParticipant>();
+            participantsSnapshot.docs.forEach(logDoc => {
+                const logData = logDoc.data() as UserActivityLog;
+                if (logData.userUid && !uniqueParticipants.has(logData.userUid)) {
+                    uniqueParticipants.set(logData.userUid, {
+                        uid: logData.userUid,
+                        email: logData.userId,
+                    });
+                }
+            });
+            
+            historyEntries.push({
+                ...exam,
+                participants: Array.from(uniqueParticipants.values()),
+                participantCount: uniqueParticipants.size,
+            });
+        }
+        
+        setExamHistory(historyEntries);
+    } catch (error: any) {
+        console.error("Error fetching exam history: ", error);
+        if (error.code === 'failed-precondition' && error.message && error.message.toLowerCase().includes('index')) {
+             toast({
+                variant: 'destructive',
+                title: 'Database Index Required (Exam History)',
+                description: 'The exam history query requires Firestore indexes. Please create them in your Firebase console. This might involve indexing "adminId" (asc) and "scheduledTime" (desc) on "scheduledExams", and/or a composite index on "activityLogs" for "adminId" (asc), "examId" (asc), and "activityType" (asc).',
+                duration: 15000,
+            });
+        } else {
+            toast({ variant: 'destructive', title: 'Error', description: 'Could not fetch exam history.' });
+        }
+    } finally {
+        setIsFetchingExamHistory(false);
+    }
+  }, [user, toast]);
 
 
   useEffect(() => {
@@ -160,7 +219,7 @@ function AdminPageContent() {
                 toast({
                     variant: 'destructive',
                     title: 'Database Index Required (Real-time)',
-                    description: 'The real-time activity log query requires a Firestore index. Please create it in your Firebase console. This usually involves indexing "adminId" and "timestamp" (descending) on the "activityLogs" collection.',
+                    description: 'The real-time activity log query requires a Firestore index. Please create it in your Firebase console. This usually involves indexing "adminId" (ascending) and "timestamp" (descending) on the "activityLogs" collection.',
                     duration: 15000, 
                 });
             } else {
@@ -180,7 +239,7 @@ function AdminPageContent() {
              toast({
                 variant: 'destructive',
                 title: 'Database Index Required (Live Snapshots)',
-                description: 'The live snapshots query requires a Firestore index. Please create it in your Firebase console. This usually involves indexing "adminId" and "updatedAt" (descending) on the "liveSnapshots" collection.',
+                description: 'The live snapshots query requires a Firestore index. Please create it in your Firebase console. This usually involves indexing "adminId" (ascending) and "updatedAt" (descending) on the "liveSnapshots" collection.',
                 duration: 15000,
             });
            } else {
@@ -196,6 +255,12 @@ function AdminPageContent() {
       };
     }
   }, [user, toast, fetchWhitelistedUsers, fetchScheduledExams, fetchActivityLogs, searchTerm]);
+
+  useEffect(() => {
+    if (user && user.uid) {
+      fetchExamHistory();
+    }
+  }, [user, fetchExamHistory]);
 
 
   const handleAddWhitelistedUser = async (e: FormEvent) => {
@@ -256,6 +321,7 @@ function AdminPageContent() {
       setNewExamTime('');
       setNewExamDuration(60);
       toast({ title: 'Exam Scheduled', description: `${examData.name} has been scheduled.` });
+      fetchExamHistory(); // Refresh history after scheduling a new exam
     } catch (error) {
       console.error("Error scheduling exam: ", error);
       toast({ variant: 'destructive', title: 'Error', description: 'Could not schedule exam.' });
@@ -270,6 +336,7 @@ function AdminPageContent() {
       await deleteDoc(doc(db, 'scheduledExams', examId));
       setScheduledExams(prev => prev.filter(exam => exam.id !== examId));
       toast({ title: 'Exam Cancelled', description: `${examToRemove.name} has been removed.` });
+      fetchExamHistory(); // Refresh history after removing an exam
     } catch (error) {
       console.error("Error removing exam: ", error);
       toast({ variant: 'destructive', title: 'Error', description: 'Could not remove exam.' });
@@ -335,12 +402,13 @@ function AdminPageContent() {
 
 
       <Tabs defaultValue="whitelist" className="w-full">
-        <TabsList className="grid w-full grid-cols-2 md:grid-cols-5 mb-6">
+        <TabsList className="grid w-full grid-cols-2 md:grid-cols-6 mb-6">
           <TabsTrigger value="whitelist"><UserPlus className="mr-2 h-4 w-4" />Whitelist Users</TabsTrigger>
           <TabsTrigger value="schedule"><CalendarPlus className="mr-2 h-4 w-4" />Schedule Exams</TabsTrigger>
           <TabsTrigger value="activity"><Eye className="mr-2 h-4 w-4" />Activity Monitor</TabsTrigger>
           <TabsTrigger value="disqualified"><ShieldAlert className="mr-2 h-4 w-4" />Disqualified Users</TabsTrigger>
           <TabsTrigger value="livefeed"><Video className="mr-2 h-4 w-4" />Live Feeds</TabsTrigger>
+          <TabsTrigger value="history"><HistoryIcon className="mr-2 h-4 w-4" />Exam History</TabsTrigger>
         </TabsList>
 
         <TabsContent value="whitelist">
@@ -625,6 +693,66 @@ function AdminPageContent() {
                       </Card>
                     ))}
                   </div>
+                </ScrollArea>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+        <TabsContent value="history">
+          <Card className="shadow-xl">
+            <CardHeader>
+              <CardTitle className="flex items-center"><HistoryIcon className="mr-2" />Exam History</CardTitle>
+              <CardDescription>Review past exams and their participants.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {isFetchingExamHistory ? (
+                <div className="flex items-center justify-center h-[300px]">
+                  <Loader2 className="h-12 w-12 animate-spin text-accent" />
+                  <p className="ml-4 text-muted-foreground">Loading Exam History...</p>
+                </div>
+              ) : examHistory.length === 0 ? (
+                 <div className="text-center text-muted-foreground py-10">
+                  <HistoryIcon className="mx-auto h-12 w-12 mb-4 opacity-50" />
+                  No exam history found for your account.
+                </div>
+              ) : (
+                <ScrollArea className="h-[500px] border rounded-md">
+                  <Accordion type="single" collapsible className="w-full">
+                    {examHistory.map((exam) => (
+                      <AccordionItem value={exam.id} key={exam.id}>
+                        <AccordionTrigger className="hover:bg-muted/50 px-4 py-3">
+                          <div className="flex justify-between w-full items-center">
+                            <span className="font-semibold text-foreground">{exam.name}</span>
+                            <div className="flex items-center space-x-4 text-sm text-muted-foreground">
+                              <span>{new Date(exam.scheduledTime).toLocaleString()}</span>
+                              <Badge variant="outline">{exam.participantCount} participant(s)</Badge>
+                            </div>
+                          </div>
+                        </AccordionTrigger>
+                        <AccordionContent className="px-4 py-3 bg-muted/20">
+                          {exam.participants.length > 0 ? (
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead>Participant Email</TableHead>
+                                  {/* Add more participant details here if needed */}
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {exam.participants.map(participant => (
+                                  <TableRow key={participant.uid}>
+                                    <TableCell>{participant.email}</TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          ) : (
+                            <p className="text-sm text-muted-foreground">No participants recorded for this exam.</p>
+                          )}
+                        </AccordionContent>
+                      </AccordionItem>
+                    ))}
+                  </Accordion>
                 </ScrollArea>
               )}
             </CardContent>

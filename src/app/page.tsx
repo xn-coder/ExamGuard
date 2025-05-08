@@ -19,7 +19,7 @@ import { Camera, AlertTriangle, Timer, CheckCircle, XCircle, ChevronLeft, Chevro
 import { AuthGuard } from '@/components/auth-guard';
 import { useAuth } from '@/hooks/useAuth';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, serverTimestamp, query, where, getDocs, orderBy, onSnapshot, doc, deleteDoc, setDoc } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, query, where, getDocs, orderBy, onSnapshot, doc, deleteDoc, setDoc, limit } from 'firebase/firestore';
 
 
 const EXAM_DURATION_SECONDS = 60 * 30; // Default 30 minutes, will be overridden by exam specific duration
@@ -530,7 +530,18 @@ function ExamPageContent() {
     setQuestions(sampleQuestions); 
     liveSnapshotDocIdRef.current = `${user.uid}_${examToStart.id}`; 
 
-    await logActivity('exam-start', `Exam started: ${examToStart.name}`, examToStart.id);
+    // Check if 'exam-start' already logged for this user and exam
+    const activityQuery = query(
+      collection(db, 'activityLogs'),
+      where('userUid', '==', user.uid),
+      where('examId', '==', examToStart.id),
+      where('activityType', '==', 'exam-start'),
+      limit(1)
+    );
+    const existingStartLog = await getDocs(activityQuery);
+    if (existingStartLog.empty) {
+      await logActivity('exam-start', `Exam started: ${examToStart.name}`, examToStart.id);
+    }
   };
 
   const handleAnswerChange = (value: string) => {
