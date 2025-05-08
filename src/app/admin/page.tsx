@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, type FormEvent, useEffect, useCallback } from 'react';
@@ -75,7 +76,11 @@ function AdminPageContent() {
   const fetchActivityLogs = useCallback(async (currentSearchTerm: string = searchTerm) => {
     if (!user || !user.uid) return;
     try {
-      const q = query(collection(db, 'activityLogs'), where('adminId', '==', user.uid));
+      // Initial fetch for activity logs - often simpler query, or same as realtime for consistency
+      // The error message indicates the realtime query needs an index, so this one might be fine
+      // or might also benefit from an index if complex sorting/filtering is added here.
+      // For now, primarily addressing the realtime query index error.
+      const q = query(collection(db, 'activityLogs'), where('adminId', '==', user.uid), orderBy('timestamp', 'desc'));
       const querySnapshot = await getDocs(q);
       let logsList = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as UserActivityLog));
 
@@ -85,14 +90,15 @@ function AdminPageContent() {
         );
       }
 
-      setActivityLogs(logsList.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
+      setActivityLogs(logsList); // Data is already sorted by the query
     } catch (error: any) {
       console.error("Error fetching activity logs: ", error);
       if (error.code === 'failed-precondition' && error.message && error.message.toLowerCase().includes('index')) {
         toast({
             variant: 'destructive',
             title: 'Database Index Required',
-            description: 'An operation requires a database index. Please create it in your Firebase console or contact support.'
+            description: 'A query for activity logs requires a Firestore index. Please create it in your Firebase console. The required index usually involves "adminId" and "timestamp".',
+            duration: 10000,
         });
       } else {
         toast({ variant: 'destructive', title: 'Error', description: 'Could not fetch activity logs.' });
@@ -153,8 +159,18 @@ function AdminPageContent() {
             );
           }
           setActivityLogs(logsList); // Already sorted by query
-        }, (error) => {
+        }, (error: any) => { // Added type :any to error for accessing .code and .message
             console.error("Error fetching activity logs in real-time: ", error);
+            if (error.code === 'failed-precondition' && error.message && error.message.toLowerCase().includes('index')) {
+                toast({
+                    variant: 'destructive',
+                    title: 'Database Index Required (Real-time)',
+                    description: 'The real-time activity log query requires a Firestore index. Please create it in your Firebase console. This usually involves indexing "adminId" and "timestamp" (descending) on the "activityLogs" collection.',
+                    duration: 15000, // Longer duration for important messages
+                });
+            } else {
+                toast({ variant: 'destructive', title: 'Real-time Error', description: 'Could not fetch real-time activity logs.' });
+            }
         }
       );
 
@@ -163,9 +179,18 @@ function AdminPageContent() {
         (snapshot) => {
           const snapshotsList = snapshot.docs.map(docData => ({ id: docData.id, ...docData.data() } as LiveSnapshot));
           setLiveSnapshots(snapshotsList);
-        }, (error) => {
+        }, (error: any) => {
           console.error("Error fetching live snapshots: ", error);
-          toast({ variant: 'destructive', title: 'Error', description: 'Could not fetch live snapshots.' });
+           if (error.code === 'failed-precondition' && error.message && error.message.toLowerCase().includes('index')) {
+             toast({
+                variant: 'destructive',
+                title: 'Database Index Required (Live Snapshots)',
+                description: 'The live snapshots query requires a Firestore index. Please create it in your Firebase console. This usually involves indexing "adminId" and "updatedAt" (descending) on the "liveSnapshots" collection.',
+                duration: 15000,
+            });
+           } else {
+            toast({ variant: 'destructive', title: 'Error', description: 'Could not fetch live snapshots.' });
+           }
         }
       );
 
@@ -626,3 +651,4 @@ export default function AdminPage() {
     </AuthGuard>
   );
 }
+
