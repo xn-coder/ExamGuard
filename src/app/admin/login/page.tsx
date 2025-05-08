@@ -17,10 +17,7 @@ import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 
 const adminLoginFormSchema = z.object({
-  email: z.string().email({ message: 'Please enter a valid email address.' })
-    .refine(email => email.endsWith('@examguard.com'), {
-      message: "Admin email must end with @examguard.com.",
-    }),
+  email: z.string().email({ message: 'Please enter a valid email address.' }),
   password: z.string().min(1, { message: 'Password cannot be empty.' }),
 });
 
@@ -108,7 +105,7 @@ export default function AdminLoginPage() {
                       <FormLabel className="text-foreground/80">Admin Email Address</FormLabel>
                       <FormControl>
                         <Input 
-                          placeholder="admin@examguard.com" 
+                          placeholder="admin@example.com" 
                           {...field} 
                           className="bg-background/70 border-border focus:bg-background"
                         />

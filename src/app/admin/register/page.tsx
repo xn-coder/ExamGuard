@@ -12,15 +12,12 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Logo } from '@/components/logo';
-import { Eye, EyeOff, UserPlus, Loader2, LogIn, ShieldCheck, Shield } from 'lucide-react';
+import { Eye, EyeOff, UserPlus, Loader2, LogIn, ShieldCheck } from 'lucide-react';
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 
 const adminRegisterFormSchema = z.object({
-  email: z.string().email({ message: 'Please enter a valid email address.' })
-    .refine(email => email.endsWith('@examguard.com'), {
-      message: "Admin email must end with @examguard.com.",
-    }),
+  email: z.string().email({ message: 'Please enter a valid email address.' }),
   password: z.string().min(6, { message: 'Password must be at least 6 characters.' }),
   confirmPassword: z.string().min(6, { message: 'Password must be at least 6 characters.'})
 }).refine((data) => data.password === data.confirmPassword, {
@@ -98,7 +95,7 @@ export default function AdminRegisterPage() {
             <CardTitle className="text-3xl font-bold text-foreground flex items-center justify-center">
                 <ShieldCheck className="mr-2 h-8 w-8 text-accent"/> Admin Registration
             </CardTitle>
-            <CardDescription className="text-muted-foreground">Create an ExamGuard Administrator account. <br/> Admin emails must end with <code className="bg-muted/50 px-1 py-0.5 rounded-sm text-muted-foreground">@examguard.com</code>.</CardDescription>
+            <CardDescription className="text-muted-foreground">Create an ExamGuard Administrator account.</CardDescription>
           </CardHeader>
           <CardContent>
             <Form {...form}>
@@ -111,7 +108,7 @@ export default function AdminRegisterPage() {
                       <FormLabel className="text-foreground/80">Admin Email Address</FormLabel>
                       <FormControl>
                         <Input 
-                          placeholder="yourname@examguard.com" 
+                          placeholder="yourname@example.com" 
                           {...field} 
                           className="bg-background/70 border-border focus:bg-background"
                         />
@@ -214,4 +211,3 @@ export default function AdminRegisterPage() {
     </main>
   );
 }
-

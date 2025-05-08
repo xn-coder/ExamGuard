@@ -17,10 +17,7 @@ import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 
 const registerFormSchema = z.object({
-  email: z.string().email({ message: 'Please enter a valid email address.' })
-    .refine(email => !email.endsWith('@examguard.com'), {
-      message: "For admin registration, please use the admin portal.",
-    }),
+  email: z.string().email({ message: 'Please enter a valid email address.' }),
   password: z.string().min(6, { message: 'Password must be at least 6 characters.' }),
   confirmPassword: z.string().min(6, { message: 'Password must be at least 6 characters.'})
 }).refine((data) => data.password === data.confirmPassword, {

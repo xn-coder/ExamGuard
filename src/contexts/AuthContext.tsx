@@ -47,32 +47,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const userDocRef = doc(db, "users", firebaseUser.uid);
         const userDocSnap = await getDoc(userDocRef);
 
-        let role: UserRole = 'user'; 
+        let role: UserRole = 'user'; // Default role for safety
 
         if (userDocSnap.exists()) {
           role = userDocSnap.data().role || 'user';
         } else {
-          // This block will be hit after createUserWithEmailAndPassword succeeds
-          // Role is determined by email suffix for new users
-          role = firebaseUser.email.endsWith('@examguard.com') ? 'admin' : 'user';
+          // This case should ideally not be hit for a user who just registered via the app's register function,
+          // as the register function itself should set the role.
+          // However, if a user is authenticated via Firebase directly (e.g. admin console)
+          // and no user document exists, we default to 'user'.
+          // The register function determines the role when creating the user document.
+          console.warn("User document not found for authenticated user, defaulting role to 'user'. This might happen if user was created outside the app's registration flow or if registration flow is incomplete.");
+          // Attempt to create a basic user document if it's truly missing after an external auth event.
           try {
             await setDoc(userDocRef, {
               email: firebaseUser.email,
-              role: role,
+              role: 'user', // Default to user if role is unknown at this stage
               uid: firebaseUser.uid,
               createdAt: serverTimestamp(), 
             });
           } catch (error) {
-            console.error("Error creating user document in Firestore:", error);
-            toast({
-              variant: "destructive",
-              title: "Account Setup Error",
-              description: "Could not save user details. Please try again or contact support.",
-            });
-            await signOut(auth); 
-            setUser(null); 
-            setIsLoading(false);
-            return;
+            console.error("Error creating default user document in Firestore during onAuthStateChanged:", error);
+            // Potentially sign out user if profile creation fails critically
           }
         }
         
@@ -81,31 +77,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         localStorage.setItem('authUser', JSON.stringify(appUser));
         
         const currentRedirect = new URLSearchParams(window.location.search).get('redirect');
-        let defaultRedirect = role === 'admin' ? '/admin' : '/';
-
-        // Handle redirection based on where the user is
-        if (role === 'admin' && (pathname.startsWith('/admin/login') || pathname.startsWith('/admin/register'))) {
-          router.replace(currentRedirect || '/admin');
-        } else if (role === 'user' && (pathname === '/login' || pathname === '/register')) {
-          router.replace(currentRedirect || '/');
-        } else if (!pathname.startsWith('/admin') && role === 'admin') {
-           // If admin is on a non-admin page (e.g. /), redirect to /admin
-           router.replace('/admin');
-        } else if (pathname.startsWith('/admin') && role === 'user') {
-            // If user is on an admin page, redirect to /
-            router.replace('/');
-        } else {
-            // General case, or if already on correct dashboard
-             if (currentRedirect) {
-                router.replace(currentRedirect)
-             } else if (role === 'admin' && !pathname.startsWith('/admin')) {
-                router.replace('/admin');
-             } else if (role === 'user' && pathname.startsWith('/admin')) {
-                router.replace('/');
-             }
-             // if none of the above, they are likely on the correct dashboard or a page accessible to their role
+        
+        // Handle redirection based on role and current path
+        if (role === 'admin') {
+          if (pathname.startsWith('/admin/login') || pathname.startsWith('/admin/register') || pathname === '/login' || pathname === '/register') {
+            router.replace(currentRedirect || '/admin');
+          } else if (!pathname.startsWith('/admin')) {
+            router.replace('/admin');
+          }
+        } else { // role === 'user'
+          if (pathname === '/login' || pathname === '/register' || pathname.startsWith('/admin')) {
+            router.replace(currentRedirect || '/');
+          }
         }
-
 
       } else {
         setUser(null);
@@ -113,7 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // If user logs out or session expires, and they are on a protected page, redirect to appropriate login
         if (pathname.startsWith('/admin') && pathname !== '/admin/login' && pathname !== '/admin/register') {
             router.replace('/admin/login');
-        } else if (!pathname.startsWith('/admin') && pathname !== '/login' && pathname !== '/register') {
+        } else if (pathname !== '/' && pathname !== '/login' && pathname !== '/register' && !pathname.startsWith('/admin')) { // Avoid redirect loop if already on landing/login for user
             router.replace('/login');
         }
       }
@@ -130,21 +114,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const firebaseUser = userCredential.user;
 
       if (firebaseUser && firebaseUser.email) {
-        // Role check against loginAs if provided
         const userDocRef = doc(db, "users", firebaseUser.uid);
         const userDocSnap = await getDoc(userDocRef);
-        let userRole: UserRole = 'user';
+        let userRole: UserRole = 'user'; // Fallback role
         if(userDocSnap.exists()) {
             userRole = userDocSnap.data().role || 'user';
-        } else { // Should not happen for login, but as a fallback
-            userRole = firebaseUser.email.endsWith('@examguard.com') ? 'admin' : 'user';
+        } else { 
+            // This should ideally not happen for an existing user trying to log in.
+            // If it does, it implies an issue with registration not creating the user document.
+            console.error(`User document missing for ${email} during login. This indicates an incomplete registration.`);
+            toast({ variant: 'destructive', title: 'Login Failed', description: `Account data for ${email} is incomplete. Please try registering again or contact support.` });
+            await signOut(auth);
+            throw new Error('User document missing for login.');
         }
 
         if (loginAs && userRole !== loginAs) {
-            await signOut(auth); // Sign out the user
+            await signOut(auth);
             const expectedPortal = loginAs === 'admin' ? 'Admin' : 'User';
             const actualPortal = userRole === 'admin' ? 'Admin' : 'User';
-            toast({ variant: 'destructive', title: 'Login Failed', description: `This account is a ${actualPortal} account. Please use the ${actualPortal} login portal.` });
+            toast({ variant: 'destructive', title: 'Login Failed', description: `This is a ${actualPortal} account. Please use the ${actualPortal} login portal.` });
             throw new Error(`Incorrect portal: Expected ${expectedPortal}, got ${actualPortal}`);
         }
         
@@ -155,71 +143,60 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     } catch (error: any) {
       console.error("Firebase login error:", error);
-      // Avoid re-throwing if it's the "Incorrect portal" error, as it's already handled
-      if (error.message && error.message.startsWith('Incorrect portal:')) {
+      if (error.message && (error.message.startsWith('Incorrect portal:') || error.message.startsWith('User document missing'))) {
         // silent fail for the component, toast already shown
       } else {
         let errorMessage = "Login failed. Please check your credentials.";
-        if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
-          errorMessage = "Incorrect email or password. Please try again or register.";
-        } else if (error.code === 'auth/wrong-password') {
-          errorMessage = "Incorrect password. Please try again.";
+        if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
+          errorMessage = "Incorrect email or password. Please try again.";
         } else if (error.code === 'auth/too-many-requests') {
           errorMessage = "Too many login attempts. Please try again later.";
         } else if (error.code === 'auth/invalid-email') {
           errorMessage = "The email address is not valid.";
         }
         toast({ variant: 'destructive', title: 'Login Failed', description: errorMessage });
-        throw error; 
+        if (!error.message.includes("User document missing")) throw error; // Re-throw unless it's our custom error
       }
     } finally {
       setIsLoading(false);
     }
   }, [toast]);
 
-  const register = useCallback(async (email: string, pass: string, registerAs?: UserRole) => {
+  const register = useCallback(async (email: string, pass: string, registerAs: UserRole = 'user') => {
     setIsLoading(true);
     try {
-      // Basic validation for registration type
-      if (registerAs === 'admin' && !email.endsWith('@examguard.com')) {
-        toast({ variant: 'destructive', title: 'Admin Registration Failed', description: 'Admin email must end with @examguard.com.' });
-        setIsLoading(false);
-        throw new Error('Admin email must end with @examguard.com.');
-      }
-      if (registerAs === 'user' && email.endsWith('@examguard.com')) {
-         toast({ variant: 'destructive', title: 'User Registration Failed', description: 'Emails ending with @examguard.com are for admin accounts. Please use the admin registration.' });
-         setIsLoading(false);
-         throw new Error('Cannot register admin email as user.');
-      }
-
-
       const newUserCredential = await createUserWithEmailAndPassword(auth, email, pass);
       const newUser = newUserCredential.user;
       if (newUser && newUser.email) {
-        // Firestore document creation and role assignment are handled by onAuthStateChanged
+        // Explicitly set the role in Firestore upon registration
+        const userDocRef = doc(db, "users", newUser.uid);
+        await setDoc(userDocRef, {
+          email: newUser.email,
+          role: registerAs, // Use the 'registerAs' parameter to set the role
+          uid: newUser.uid,
+          createdAt: serverTimestamp(),
+        });
+        
         toast({
           title: 'Registration Successful!',
-          description: `Welcome! Your account has been created.`,
+          description: `Welcome! Your ${registerAs} account has been created.`,
         });
+      } else {
+        throw new Error("User creation failed or email not available.");
       }
     } catch (error: any)
      {
       console.error("Firebase registration error:", error);
-      // Avoid re-throwing if it's a validation error already handled
-      if (error.message && (error.message.includes('@examguard.com') || error.message.includes('admin email as user'))) {
-        // silent fail for the component, toast already shown
-      } else {
-        let regErrorMessage = "Registration failed. Please try again.";
-        if (error.code === 'auth/email-already-in-use') {
-          regErrorMessage = "This email is already registered. Please log in or use a different email.";
-        } else if (error.code === 'auth/weak-password') {
-          regErrorMessage = "Password is too weak. Please choose a stronger password (at least 6 characters).";
-        } else if (error.code === 'auth/invalid-email') {
-          regErrorMessage = "The email address is not valid.";
-        }
-        toast({ variant: 'destructive', title: 'Registration Failed', description: regErrorMessage });
-        throw error; 
+      let regErrorMessage = "Registration failed. Please try again.";
+      if (error.code === 'auth/email-already-in-use') {
+        regErrorMessage = "This email is already registered. Please log in or use a different email.";
+      } else if (error.code === 'auth/weak-password') {
+        regErrorMessage = "Password is too weak. Please choose a stronger password (at least 6 characters).";
+      } else if (error.code === 'auth/invalid-email') {
+        regErrorMessage = "The email address is not valid.";
       }
+      toast({ variant: 'destructive', title: 'Registration Failed', description: regErrorMessage });
+      throw error; 
     } finally {
       setIsLoading(false);
     }
@@ -234,7 +211,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         title: 'Logged Out',
         description: 'You have been successfully logged out.',
       });
-       // Explicit redirection based on previous role
       if (previousUserRole === 'admin') {
         router.replace('/admin/login');
       } else {
