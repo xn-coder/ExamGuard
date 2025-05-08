@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, type FormEvent, useEffect, useCallback } from 'react';
@@ -25,8 +24,7 @@ interface AggregatedLog extends UserActivityLog {
   count: number;
 }
 
-// Define BEHAVIOR_ANALYSIS_INTERVAL_MS as it's used in the CardDescription for Live Feeds
-const BEHAVIOR_ANALYSIS_INTERVAL_MS = 10000; // 10 seconds, matches the value in src/app/page.tsx
+const SNAPSHOT_AND_ANALYSIS_INTERVAL_MS = 5000; // 5 seconds, matches the value in src/app/page.tsx
 
 function AdminPageContent() {
   const [whitelistedUsers, setWhitelistedUsers] = useState<WhitelistedUser[]>([]);
@@ -76,10 +74,6 @@ function AdminPageContent() {
   const fetchActivityLogs = useCallback(async (currentSearchTerm: string = searchTerm) => {
     if (!user || !user.uid) return;
     try {
-      // Initial fetch for activity logs - often simpler query, or same as realtime for consistency
-      // The error message indicates the realtime query needs an index, so this one might be fine
-      // or might also benefit from an index if complex sorting/filtering is added here.
-      // For now, primarily addressing the realtime query index error.
       const q = query(collection(db, 'activityLogs'), where('adminId', '==', user.uid), orderBy('timestamp', 'desc'));
       const querySnapshot = await getDocs(q);
       let logsList = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as UserActivityLog));
@@ -90,7 +84,7 @@ function AdminPageContent() {
         );
       }
 
-      setActivityLogs(logsList); // Data is already sorted by the query
+      setActivityLogs(logsList); 
     } catch (error: any) {
       console.error("Error fetching activity logs: ", error);
       if (error.code === 'failed-precondition' && error.message && error.message.toLowerCase().includes('index')) {
@@ -158,7 +152,7 @@ function AdminPageContent() {
               log.userId.toLowerCase().includes(searchTerm.toLowerCase())
             );
           }
-          setActivityLogs(logsList); // Already sorted by query
+          setActivityLogs(logsList); 
         }, (error: any) => { 
             console.error("Error fetching activity logs in real-time: ", error);
             if (error.code === 'failed-precondition' && error.message && error.message.toLowerCase().includes('index')) {
@@ -591,7 +585,7 @@ function AdminPageContent() {
           <Card className="shadow-xl">
             <CardHeader>
               <CardTitle className="flex items-center"><Video className="mr-2" />Live User Snapshots</CardTitle>
-              <CardDescription>View near real-time webcam snapshots of users currently taking exams you manage. Snapshots update every {BEHAVIOR_ANALYSIS_INTERVAL_MS / 1000} seconds.</CardDescription>
+              <CardDescription>View near real-time webcam snapshots of users currently taking exams you manage. Snapshots update every {SNAPSHOT_AND_ANALYSIS_INTERVAL_MS / 1000} seconds.</CardDescription>
             </CardHeader>
             <CardContent>
               {liveSnapshots.length === 0 ? (
@@ -651,4 +645,3 @@ export default function AdminPage() {
     </AuthGuard>
   );
 }
-
