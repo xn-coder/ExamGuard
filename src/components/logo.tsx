@@ -1,5 +1,6 @@
 import { ShieldCheck } from 'lucide-react';
 import type { SVGProps } from 'react';
+import { cn } from "@/lib/utils"; // Added import
 
 interface LogoProps extends SVGProps<SVGSVGElement> {
   iconColor?: string;
