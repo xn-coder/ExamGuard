@@ -165,7 +165,7 @@ function AdminPageContent() {
                 toast({
                     variant: 'destructive',
                     title: 'Database Index Required (Real-time)',
-                    description: 'The real-time activity log query requires a Firestore index. Please create it in your Firebase console. This usually involves indexing "adminId" and "timstamp" (descending) on the "activityLogs" collection.',
+                    description: 'The real-time activity log query requires a Firestore index. Please create it in your Firebase console. This usually involves indexing "adminId" and "timestamp" (descending) on the "activityLogs" collection.',
                     duration: 15000, 
                 });
             } else {
