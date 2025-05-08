@@ -23,7 +23,7 @@ import { collection, addDoc, serverTimestamp, query, where, getDocs, orderBy, on
 
 
 const EXAM_DURATION_SECONDS = 60 * 30; // Default 30 minutes, will be overridden by exam specific duration
-const BEHAVIOR_ANALYSIS_INTERVAL_MS = 10000; // 10 seconds
+const BEHAVIOR_ANALYSIS_INTERVAL_MS = 10000; // Kept for reference, but now only one analysis pass
 const MAX_VIOLATIONS = 3; // Max violations before disqualification
 
 function ExamPageContent() {
@@ -42,6 +42,7 @@ function ExamPageContent() {
 
   const webcamRef = useRef<HTMLVideoElement>(null);
   const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
+  const [initialSnapshotTaken, setInitialSnapshotTaken] = useState(false);
   const [showWarning, setShowWarning] = useState(false);
   const [warningReason, setWarningReason] = useState<string | null>(null);
   const [violationCount, setViolationCount] = useState(0);
@@ -82,6 +83,7 @@ function ExamPageContent() {
     setViolationCount(0);
     setShowWarning(false);
     setWarningReason(null);
+    setInitialSnapshotTaken(false); // Reset snapshot flag
     
     isDisqualificationLoggedRef.current = false;
     if (webcamRef.current && webcamRef.current.srcObject) {
@@ -196,6 +198,7 @@ function ExamPageContent() {
       webcamRef.current.srcObject = null;
     }
     setHasCameraPermission(false);
+    setInitialSnapshotTaken(true); // Ensure no further attempts to use camera
     clearLiveSnapshot(); // Clear live snapshot on disqualification
 
     setTimeout(() => {
@@ -299,6 +302,7 @@ function ExamPageContent() {
       webcamRef.current.srcObject = null;
     }
     setHasCameraPermission(false); 
+    setInitialSnapshotTaken(true); // Ensure no further attempts to use camera
     clearLiveSnapshot(); // Clear live snapshot on submission
     
     let finalScore = 0;
@@ -347,8 +351,8 @@ function ExamPageContent() {
 
 
   useEffect(() => {
-    const getCameraPermission = async () => {
-      if (!examStarted || hasCameraPermission === true || !selectedExam || isDisqualified) return; 
+    const getCameraPerm = async () => {
+      if (!examStarted || hasCameraPermission || initialSnapshotTaken || !selectedExam || isDisqualified) return; 
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true });
         setHasCameraPermission(true);
@@ -358,7 +362,7 @@ function ExamPageContent() {
         setTimeout(() => {
              toast({
                 title: "Webcam Enabled",
-                description: "Proctoring has started.",
+                description: "Proctoring snapshot will be taken.",
                 variant: "default",
               });
         }, 0);
@@ -366,7 +370,7 @@ function ExamPageContent() {
         console.error('Error accessing camera:', error);
         setHasCameraPermission(false);
         if(examStarted && !isDisqualified){ 
-             handleDisqualification("Camera access denied or unavailable mid-exam. Exam cannot be proctored.");
+             handleDisqualification("Camera access denied or unavailable. Exam cannot be proctored.");
         } else if (!examStarted) { 
              setTimeout(() => {
                 toast({
@@ -380,24 +384,20 @@ function ExamPageContent() {
       }
     };
     
-    if(examStarted && selectedExam && !isDisqualified) getCameraPermission(); 
+    if(examStarted && selectedExam && !isDisqualified && !initialSnapshotTaken) getCameraPerm(); 
     
-    return () => {
-      if (webcamRef.current && webcamRef.current.srcObject) {
-        const stream = webcamRef.current.srcObject as MediaStream;
-        stream.getTracks().forEach(track => track.stop());
-        webcamRef.current.srcObject = null;
-      }
-    };
-  }, [examStarted, toast, handleDisqualification, hasCameraPermission, selectedExam, isDisqualified]);
+    // Cleanup function for this effect is NOT stopping tracks here,
+    // as tracks are stopped after the single snapshot is taken.
+    // Tracks are also stopped on exam end/disqualification/reset.
+  }, [examStarted, toast, handleDisqualification, hasCameraPermission, selectedExam, isDisqualified, initialSnapshotTaken]);
   
-  // AI Behavior Analysis and Live Snapshot Update
+  // AI Behavior Analysis and Live Snapshot Update (SINGLE CAPTURE)
   useEffect(() => {
-    if (!examStarted || !hasCameraPermission || examSubmitted || isDisqualified || !selectedExam || !user || !selectedExam.adminId) return;
+    if (!examStarted || !hasCameraPermission || examSubmitted || isDisqualified || !selectedExam || !user || !selectedExam.adminId || initialSnapshotTaken) {
+      return;
+    }
 
-    liveSnapshotDocIdRef.current = `${user.uid}_${selectedExam.id}`;
-
-    const analysisTimer = setInterval(async () => {
+    const performInitialCapture = async () => {
       if (webcamRef.current && webcamRef.current.readyState === 4 && webcamRef.current.videoWidth > 0) {
         const canvas = document.createElement('canvas');
         canvas.width = webcamRef.current.videoWidth;
@@ -405,17 +405,17 @@ function ExamPageContent() {
         const ctx = canvas.getContext('2d');
         if (ctx) {
           ctx.drawImage(webcamRef.current, 0, 0, canvas.width, canvas.height);
-          const webcamFeedDataUri = canvas.toDataURL('image/jpeg', 0.7); // Use JPEG and quality for smaller size
+          const webcamFeedDataUri = canvas.toDataURL('image/jpeg', 0.7);
           
-          // Update live snapshot in Firestore
-          if (liveSnapshotDocIdRef.current && selectedExam.adminId) { // Ensure adminId is available
+          liveSnapshotDocIdRef.current = `${user.uid}_${selectedExam.id}`;
+          if (liveSnapshotDocIdRef.current && selectedExam.adminId) {
             try {
               await setDoc(doc(db, 'liveSnapshots', liveSnapshotDocIdRef.current), {
                 userId: user.uid,
-                userEmail: user.email,
+                userEmail: user.email ?? 'unknown_email',
                 examId: selectedExam.id,
                 examName: selectedExam.name,
-                adminId: selectedExam.adminId, // Crucial for admin filtering
+                adminId: selectedExam.adminId,
                 snapshotDataUri: webcamFeedDataUri,
                 updatedAt: serverTimestamp(),
               }, { merge: true });
@@ -424,7 +424,6 @@ function ExamPageContent() {
             }
           }
 
-          // Perform AI behavior analysis
           try {
             const input: AnalyzeWebcamFeedInput = {
               webcamFeedDataUri,
@@ -433,24 +432,36 @@ function ExamPageContent() {
             };
             const result: AnalyzeWebcamFeedOutput = await analyzeWebcamFeed(input);
             if (result.isSuspicious) {
-              recordViolation(result.reason || "AI detected suspicious behavior.", 'ai-warning');
+              recordViolation(result.reason || "AI detected suspicious behavior from initial snapshot.", 'ai-warning');
             }
           } catch (error) {
-            console.error("Error analyzing webcam feed:", error);
+            console.error("Error analyzing initial webcam snapshot:", error);
             if (!isDisqualified) {
               const currentExamId = selectedExam?.id || 'unknown_exam_during_ai_error';
-              await logActivity('ai-warning', `Error in AI analysis: ${error instanceof Error ? error.message : String(error)}`, currentExamId);
+              await logActivity('ai-warning', `Error in initial AI analysis: ${error instanceof Error ? error.message : String(error)}`, currentExamId);
             }
+          } finally {
+            // Stop camera tracks after single capture and analysis
+            if (webcamRef.current && webcamRef.current.srcObject) {
+              const stream = webcamRef.current.srcObject as MediaStream;
+              stream.getTracks().forEach(track => track.stop());
+              // webcamRef.current.srcObject = null; // Optional: This might clear the video element view
+            }
+            setInitialSnapshotTaken(true); // Mark snapshot as taken
+            // Do not setHasCameraPermission(false) here, permission was granted. Stream is just stopped.
           }
         }
       }
-    }, BEHAVIOR_ANALYSIS_INTERVAL_MS);
+    };
+
+    // Slight delay to ensure webcam stream is fully active
+    const captureTimeout = setTimeout(performInitialCapture, 1000); 
 
     return () => {
-      clearInterval(analysisTimer);
-      // Do not clear snapshot here, handled by resetExamState, handleSubmit, handleDisqualification
+      clearTimeout(captureTimeout);
+      // Tracks are stopped within performInitialCapture or by other cleanup mechanisms (submit, disqualify, reset)
     };
-  }, [examStarted, hasCameraPermission, examSubmitted, totalTimeSpent, currentQuestionIndex, recordViolation, isDisqualified, selectedExam, user, logActivity]);
+  }, [examStarted, hasCameraPermission, examSubmitted, isDisqualified, selectedExam, user, totalTimeSpent, currentQuestionIndex, recordViolation, logActivity, initialSnapshotTaken]);
 
 
   useEffect(() => {
@@ -493,6 +504,8 @@ function ExamPageContent() {
       return;
     }
     
+    setInitialSnapshotTaken(false); // Reset for new exam
+    setHasCameraPermission(null); // Reset camera permission status for new exam
     setSelectedExam(examToStart); 
     isDisqualificationLoggedRef.current = false; 
     setIsDisqualified(false); 
@@ -704,7 +717,7 @@ function ExamPageContent() {
                      <div className="mt-3 p-3 border rounded-md bg-muted/30">
                         <h4 className="font-semibold text-sm mb-1">Instructions:</h4>
                         <ul className="list-disc list-inside text-xs space-y-0.5 text-muted-foreground">
-                            <li>Webcam required and will be monitored.</li>
+                            <li>Webcam required for initial snapshot.</li>
                             <li>Quiet environment, no external help.</li>
                             <li>No tab switching or copy/pasting.</li>
                             <li>{MAX_VIOLATIONS} warnings lead to disqualification.</li>
@@ -715,7 +728,7 @@ function ExamPageContent() {
                     <Button 
                         onClick={() => handleStartExam(exam)} 
                         className="w-full"
-                        disabled={hasCameraPermission === false} 
+                        disabled={hasCameraPermission === false && !initialSnapshotTaken} // Disable if permission denied and no snapshot yet
                     >
                       <Camera className="mr-2 h-4 w-4" /> Start Exam
                     </Button>
@@ -724,12 +737,12 @@ function ExamPageContent() {
               ))}
             </div>
           )}
-           {hasCameraPermission === false && ( 
+           {hasCameraPermission === false && !initialSnapshotTaken && ( // Only show if permission explicitly denied AND no snapshot taken yet
               <Alert variant="destructive" className="my-6 max-w-lg mx-auto">
                 <AlertTriangle className="h-4 w-4" />
                 <AlertTitle>Camera Access Issue</AlertTitle>
                 <AlertDescription>
-                  Camera access was denied or is unavailable. Please enable camera permissions in your browser settings and refresh the page. Exams require a working webcam.
+                  Camera access was denied or is unavailable. Please enable camera permissions in your browser settings and refresh the page. Exams require an initial webcam snapshot.
                 </AlertDescription>
               </Alert>
             )}
@@ -781,17 +794,23 @@ function ExamPageContent() {
               </div>
               <div className="w-32 h-24 bg-muted rounded-md overflow-hidden border relative">
                 <video ref={webcamRef} className="w-full h-full object-cover transform scaleX-[-1]" autoPlay playsInline muted />
-                {hasCameraPermission === null && (
+                {hasCameraPermission === null && !initialSnapshotTaken && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 text-white text-xs">
                         <Camera className="h-6 w-6 mb-1 animate-pulse" />
-                        Initializing...
+                        Initializing Camera...
                     </div>
                 )}
-                {hasCameraPermission === false && examStarted && !isDisqualified && ( 
+                {hasCameraPermission === false && examStarted && !isDisqualified && !initialSnapshotTaken && ( 
                   <div className="absolute inset-0 flex flex-col items-center justify-center bg-destructive text-destructive-foreground text-xs p-1 text-center">
                     <EyeOff className="h-6 w-6 mb-1" />
-                    Webcam Error! Proctoring inactive.
+                    Webcam Error! Snapshot needed.
                   </div>
+                )}
+                {initialSnapshotTaken && (
+                     <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 text-white text-xs">
+                        <CheckCircle className="h-6 w-6 mb-1 text-green-400" />
+                        Snapshot Taken. Camera Off.
+                    </div>
                 )}
               </div>
             </div>
@@ -958,3 +977,4 @@ export default function ExamPage() {
 }
 
     
+
