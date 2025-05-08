@@ -12,14 +12,14 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Logo } from '@/components/logo';
-import { Eye, EyeOff, UserPlus, Loader2, LogIn, Shield } from 'lucide-react';
+import { Eye, EyeOff, UserPlus, Loader2, LogIn, ShieldCheck, Shield } from 'lucide-react';
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 
-const registerFormSchema = z.object({
+const adminRegisterFormSchema = z.object({
   email: z.string().email({ message: 'Please enter a valid email address.' })
-    .refine(email => !email.endsWith('@examguard.com'), {
-      message: "For admin registration, please use the admin portal.",
+    .refine(email => email.endsWith('@examguard.com'), {
+      message: "Admin email must end with @examguard.com.",
     }),
   password: z.string().min(6, { message: 'Password must be at least 6 characters.' }),
   confirmPassword: z.string().min(6, { message: 'Password must be at least 6 characters.'})
@@ -28,9 +28,9 @@ const registerFormSchema = z.object({
   path: ["confirmPassword"], 
 });
 
-type RegisterFormValues = z.infer<typeof registerFormSchema>;
+type AdminRegisterFormValues = z.infer<typeof adminRegisterFormSchema>;
 
-export default function RegisterPage() {
+export default function AdminRegisterPage() {
   const { register, user, isLoading: authLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -38,8 +38,8 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  const form = useForm<RegisterFormValues>({
-    resolver: zodResolver(registerFormSchema),
+  const form = useForm<AdminRegisterFormValues>({
+    resolver: zodResolver(adminRegisterFormSchema),
     defaultValues: {
       email: '',
       password: '',
@@ -51,27 +51,40 @@ export default function RegisterPage() {
 
  useEffect(() => {
     if (!authLoading && user) {
-      const defaultRedirect = user.role === 'admin' ? '/admin' : '/';
-      const redirectUrl = searchParams.get('redirect') || defaultRedirect;
+       if (user.role !== 'admin') {
+        router.replace('/'); 
+        return;
+      }
+      const redirectUrl = searchParams.get('redirect') || '/admin';
       router.replace(redirectUrl);
     }
   }, [user, authLoading, router, searchParams, toast]);
 
-  async function onSubmit(data: RegisterFormValues) {
+  async function onSubmit(data: AdminRegisterFormValues) {
     try {
-      await register(data.email, data.password, 'user');
+      await register(data.email, data.password, 'admin');
     } catch (error) {
-      console.error("Register page submission error:", error);
+      console.error("Admin register page submission error:", error);
     }
   }
   
-  if (authLoading || (!authLoading && user)) {
+  if (authLoading || (!authLoading && user && user.role === 'admin')) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-secondary p-4">
         <Loader2 className="h-12 w-12 animate-spin text-accent" />
-        <p className="mt-4 text-muted-foreground">Loading...</p>
+        <p className="mt-4 text-muted-foreground">Loading Admin Portal...</p>
       </div>
     );
+  }
+
+  if (!authLoading && user && user.role !== 'admin') {
+      router.replace('/'); 
+      return (
+        <div className="flex min-h-screen flex-col items-center justify-center bg-secondary p-4">
+          <Loader2 className="h-12 w-12 animate-spin text-accent" />
+          <p className="mt-4 text-muted-foreground">Redirecting...</p>
+        </div>
+      );
   }
 
   return (
@@ -82,8 +95,10 @@ export default function RegisterPage() {
         </div>
         <Card className="w-full max-w-md shadow-2xl bg-card/90 backdrop-blur-sm">
           <CardHeader className="space-y-2 text-center">
-            <CardTitle className="text-3xl font-bold text-foreground">Create User Account</CardTitle>
-            <CardDescription className="text-muted-foreground">Join ExamGuard to start your secure examination journey.</CardDescription>
+            <CardTitle className="text-3xl font-bold text-foreground flex items-center justify-center">
+                <ShieldCheck className="mr-2 h-8 w-8 text-accent"/> Admin Registration
+            </CardTitle>
+            <CardDescription className="text-muted-foreground">Create an ExamGuard Administrator account. <br/> Admin emails must end with <code className="bg-muted/50 px-1 py-0.5 rounded-sm text-muted-foreground">@examguard.com</code>.</CardDescription>
           </CardHeader>
           <CardContent>
             <Form {...form}>
@@ -93,10 +108,10 @@ export default function RegisterPage() {
                   name="email"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-foreground/80">Email Address</FormLabel>
+                      <FormLabel className="text-foreground/80">Admin Email Address</FormLabel>
                       <FormControl>
                         <Input 
-                          placeholder="you@example.com" 
+                          placeholder="yourname@examguard.com" 
                           {...field} 
                           className="bg-background/70 border-border focus:bg-background"
                         />
@@ -171,22 +186,22 @@ export default function RegisterPage() {
                   ) : (
                     <UserPlus className="mr-2 h-5 w-5" />
                   )}
-                  Create Account
+                  Create Admin Account
                 </Button>
               </form>
             </Form>
           </CardContent>
           <CardFooter className="flex flex-col items-center text-center text-sm space-y-3 pt-6">
             <p className="text-muted-foreground">
-              Already have an account?{' '}
-              <Link href="/login" className="font-medium text-accent hover:underline">
-                Sign in here
+              Already have an admin account?{' '}
+              <Link href="/admin/login" className="font-medium text-accent hover:underline">
+                Admin Sign In
               </Link>
             </p>
-            <p className="text-muted-foreground pt-2">
-              Admin?{' '}
-              <Link href="/admin/register" className="font-medium text-accent hover:underline">
-                Admin Registration <Shield className="inline-block ml-1 h-4 w-4" />
+             <p className="text-muted-foreground pt-2">
+              Not an Admin?{' '}
+              <Link href="/register" className="font-medium text-accent hover:underline">
+                User Registration <UserPlus className="inline-block ml-1 h-4 w-4" />
               </Link>
             </p>
           </CardFooter>
@@ -199,3 +214,4 @@ export default function RegisterPage() {
     </main>
   );
 }
+

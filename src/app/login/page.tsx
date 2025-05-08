@@ -12,7 +12,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Logo } from '@/components/logo';
-import { Eye, EyeOff, LogIn, Loader2, UserPlus } from 'lucide-react';
+import { Eye, EyeOff, LogIn, Loader2, UserPlus, Shield } from 'lucide-react';
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 
@@ -42,18 +42,16 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!authLoading && user) {
-      const redirectUrl = searchParams.get('redirect') || (user.role === 'admin' ? '/admin' : '/');
+      const defaultRedirect = user.role === 'admin' ? '/admin' : '/';
+      const redirectUrl = searchParams.get('redirect') || defaultRedirect;
       router.replace(redirectUrl);
     }
   }, [user, authLoading, router, searchParams]);
 
   async function onSubmit(data: LoginFormValues) {
     try {
-      await login(data.email, data.password);
-      // Redirection is handled by the useEffect above
+      await login(data.email, data.password, 'user');
     } catch (error) {
-      // Errors are toasted within the login function in AuthContext
-      // No need to re-toast here unless for specific UI feedback on this page
       console.error("Login page submission error:", error);
     }
   }
@@ -71,12 +69,12 @@ export default function LoginPage() {
     <main className="flex min-h-screen flex-col items-center justify-between bg-gradient-to-br from-background to-secondary p-4">
       <div className="flex flex-col items-center w-full pt-12 md:pt-20">
         <div className="mb-10">
-          <Logo iconColor="hsl(var(--primary-foreground))" textColor="hsl(var(--primary-foreground))" />
+          <Logo iconColor="hsl(var(--primary-foreground))" textColor="hsl(var(--primary-foreground))" size="large" />
         </div>
         <Card className="w-full max-w-md shadow-2xl bg-card/90 backdrop-blur-sm">
           <CardHeader className="space-y-2 text-center">
-            <CardTitle className="text-3xl font-bold text-foreground">Welcome Back!</CardTitle>
-            <CardDescription className="text-muted-foreground">Sign in to continue to ExamGuard.</CardDescription>
+            <CardTitle className="text-3xl font-bold text-foreground">User Login</CardTitle>
+            <CardDescription className="text-muted-foreground">Sign in to your ExamGuard account.</CardDescription>
           </CardHeader>
           <CardContent>
             <Form {...form}>
@@ -141,13 +139,16 @@ export default function LoginPage() {
           </CardContent>
           <CardFooter className="flex flex-col items-center text-center text-sm space-y-3 pt-6">
             <p className="text-muted-foreground">
-              Don't have an account?{' '}
+              Don&apos;t have an account?{' '}
               <Link href="/register" className="font-medium text-accent hover:underline">
                 Register here
               </Link>
             </p>
-             <p className="text-xs text-muted-foreground/80 pt-2">
-              Admin accounts are created with emails ending in <code className="bg-muted/50 px-1 py-0.5 rounded-sm text-muted-foreground">@examguard.com</code> upon registration.
+            <p className="text-muted-foreground pt-2">
+              Are you an Admin?{' '}
+              <Link href="/admin/login" className="font-medium text-accent hover:underline">
+                Admin Login <Shield className="inline-block ml-1 h-4 w-4" />
+              </Link>
             </p>
           </CardFooter>
         </Card>

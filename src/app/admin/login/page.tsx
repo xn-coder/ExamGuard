@@ -12,67 +12,77 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Logo } from '@/components/logo';
-import { Eye, EyeOff, UserPlus, Loader2, LogIn, Shield } from 'lucide-react';
+import { Eye, EyeOff, LogIn, Loader2, UserPlus, Shield } from 'lucide-react';
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 
-const registerFormSchema = z.object({
+const adminLoginFormSchema = z.object({
   email: z.string().email({ message: 'Please enter a valid email address.' })
-    .refine(email => !email.endsWith('@examguard.com'), {
-      message: "For admin registration, please use the admin portal.",
+    .refine(email => email.endsWith('@examguard.com'), {
+      message: "Admin email must end with @examguard.com.",
     }),
-  password: z.string().min(6, { message: 'Password must be at least 6 characters.' }),
-  confirmPassword: z.string().min(6, { message: 'Password must be at least 6 characters.'})
-}).refine((data) => data.password === data.confirmPassword, {
-  message: "Passwords don't match",
-  path: ["confirmPassword"], 
+  password: z.string().min(1, { message: 'Password cannot be empty.' }),
 });
 
-type RegisterFormValues = z.infer<typeof registerFormSchema>;
+type AdminLoginFormValues = z.infer<typeof adminLoginFormSchema>;
 
-export default function RegisterPage() {
-  const { register, user, isLoading: authLoading } = useAuth();
+export default function AdminLoginPage() {
+  const { login, user, isLoading: authLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
   const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  const form = useForm<RegisterFormValues>({
-    resolver: zodResolver(registerFormSchema),
+  const form = useForm<AdminLoginFormValues>({
+    resolver: zodResolver(adminLoginFormSchema),
     defaultValues: {
       email: '',
       password: '',
-      confirmPassword: '',
     },
   });
 
   const { handleSubmit, formState: { isSubmitting } } = form;
 
- useEffect(() => {
+  useEffect(() => {
     if (!authLoading && user) {
-      const defaultRedirect = user.role === 'admin' ? '/admin' : '/';
-      const redirectUrl = searchParams.get('redirect') || defaultRedirect;
+      // If logged in user is not an admin, push them to user login or home
+      if (user.role !== 'admin') {
+        router.replace('/'); 
+        return;
+      }
+      const redirectUrl = searchParams.get('redirect') || '/admin';
       router.replace(redirectUrl);
     }
-  }, [user, authLoading, router, searchParams, toast]);
+  }, [user, authLoading, router, searchParams]);
 
-  async function onSubmit(data: RegisterFormValues) {
+  async function onSubmit(data: AdminLoginFormValues) {
     try {
-      await register(data.email, data.password, 'user');
+      await login(data.email, data.password, 'admin');
     } catch (error) {
-      console.error("Register page submission error:", error);
+      console.error("Admin login page submission error:", error);
     }
   }
-  
-  if (authLoading || (!authLoading && user)) {
+
+  if (authLoading || (!authLoading && user && user.role === 'admin')) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-secondary p-4">
         <Loader2 className="h-12 w-12 animate-spin text-accent" />
-        <p className="mt-4 text-muted-foreground">Loading...</p>
+        <p className="mt-4 text-muted-foreground">Loading Admin Portal...</p>
       </div>
     );
   }
+  
+  // If a non-admin user somehow lands here while logged in
+  if (!authLoading && user && user.role !== 'admin') {
+      router.replace('/'); // Or user login page
+      return (
+        <div className="flex min-h-screen flex-col items-center justify-center bg-secondary p-4">
+          <Loader2 className="h-12 w-12 animate-spin text-accent" />
+          <p className="mt-4 text-muted-foreground">Redirecting...</p>
+        </div>
+      );
+  }
+
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-between bg-gradient-to-br from-background to-secondary p-4">
@@ -82,8 +92,10 @@ export default function RegisterPage() {
         </div>
         <Card className="w-full max-w-md shadow-2xl bg-card/90 backdrop-blur-sm">
           <CardHeader className="space-y-2 text-center">
-            <CardTitle className="text-3xl font-bold text-foreground">Create User Account</CardTitle>
-            <CardDescription className="text-muted-foreground">Join ExamGuard to start your secure examination journey.</CardDescription>
+            <CardTitle className="text-3xl font-bold text-foreground flex items-center justify-center">
+              <Shield className="mr-2 h-8 w-8 text-accent" /> Admin Login
+            </CardTitle>
+            <CardDescription className="text-muted-foreground">Sign in to the ExamGuard Admin Portal.</CardDescription>
           </CardHeader>
           <CardContent>
             <Form {...form}>
@@ -93,10 +105,10 @@ export default function RegisterPage() {
                   name="email"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-foreground/80">Email Address</FormLabel>
+                      <FormLabel className="text-foreground/80">Admin Email Address</FormLabel>
                       <FormControl>
                         <Input 
-                          placeholder="you@example.com" 
+                          placeholder="admin@examguard.com" 
                           {...field} 
                           className="bg-background/70 border-border focus:bg-background"
                         />
@@ -115,11 +127,11 @@ export default function RegisterPage() {
                         <div className="relative">
                           <Input 
                             type={showPassword ? 'text' : 'password'} 
-                            placeholder="•••••••• (min. 6 characters)" 
+                            placeholder="••••••••" 
                             {...field} 
                             className="bg-background/70 border-border focus:bg-background"
                           />
-                           <Button 
+                          <Button 
                             type="button" 
                             variant="ghost" 
                             size="icon" 
@@ -135,58 +147,28 @@ export default function RegisterPage() {
                     </FormItem>
                   )}
                 />
-                 <FormField
-                  control={form.control}
-                  name="confirmPassword"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-foreground/80">Confirm Password</FormLabel>
-                      <FormControl>
-                        <div className="relative">
-                          <Input 
-                            type={showConfirmPassword ? 'text' : 'password'} 
-                            placeholder="••••••••" 
-                            {...field} 
-                            className="bg-background/70 border-border focus:bg-background"
-                          />
-                          <Button 
-                            type="button" 
-                            variant="ghost" 
-                            size="icon" 
-                            className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 text-muted-foreground hover:text-foreground"
-                            onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                            aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
-                          >
-                            {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                          </Button>
-                        </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
                 <Button type="submit" className="w-full bg-accent hover:bg-accent/90 text-accent-foreground text-lg py-3" disabled={isSubmitting || authLoading}>
                   {isSubmitting || authLoading ? (
                     <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                   ) : (
-                    <UserPlus className="mr-2 h-5 w-5" />
+                    <LogIn className="mr-2 h-5 w-5" />
                   )}
-                  Create Account
+                  Admin Sign In
                 </Button>
               </form>
             </Form>
           </CardContent>
           <CardFooter className="flex flex-col items-center text-center text-sm space-y-3 pt-6">
             <p className="text-muted-foreground">
-              Already have an account?{' '}
-              <Link href="/login" className="font-medium text-accent hover:underline">
-                Sign in here
+              Need an admin account?{' '}
+              <Link href="/admin/register" className="font-medium text-accent hover:underline">
+                Admin Registration
               </Link>
             </p>
-            <p className="text-muted-foreground pt-2">
-              Admin?{' '}
-              <Link href="/admin/register" className="font-medium text-accent hover:underline">
-                Admin Registration <Shield className="inline-block ml-1 h-4 w-4" />
+             <p className="text-muted-foreground pt-2">
+              Not an Admin?{' '}
+              <Link href="/login" className="font-medium text-accent hover:underline">
+                User Login <UserPlus className="inline-block ml-1 h-4 w-4" />
               </Link>
             </p>
           </CardFooter>
