@@ -14,7 +14,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Logo } from '@/components/logo';
 import { Eye, EyeOff, LogIn, Loader2, UserPlus, Shield } from 'lucide-react';
 import Link from 'next/link';
-import { useToast } from '@/hooks/use-toast';
+// Removed useToast import as AuthContext now handles login/register toasts
 
 const loginFormSchema = z.object({
   email: z.string().email({ message: 'Please enter a valid email address.' }),
@@ -27,7 +27,7 @@ export default function LoginPage() {
   const { login, user, isLoading: authLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { toast } = useToast();
+  // const { toast } = useToast(); // Toasts are now handled by AuthContext for login
   const [showPassword, setShowPassword] = useState(false);
 
   const form = useForm<LoginFormValues>({
@@ -49,11 +49,13 @@ export default function LoginPage() {
   }, [user, authLoading, router, searchParams]);
 
   async function onSubmit(data: LoginFormValues) {
-    try {
-      await login(data.email, data.password, 'user');
-    } catch (error) {
-      console.error("Login page submission error:", error);
+    const result = await login(data.email, data.password, 'user');
+    if (!result.success && result.message) {
+      // AuthContext's login function already handles toasting for specific errors.
+      // This console.error is for debugging if there's a message.
+      console.error("User login page submission error details:", result.message);
     }
+    // If login is successful, onAuthStateChanged in AuthContext will handle redirection.
   }
 
   if (authLoading || (!authLoading && user) ) { 

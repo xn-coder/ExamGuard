@@ -14,7 +14,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Logo } from '@/components/logo';
 import { Eye, EyeOff, UserPlus, Loader2, LogIn, Shield } from 'lucide-react';
 import Link from 'next/link';
-import { useToast } from '@/hooks/use-toast';
+// Removed useToast import as AuthContext now handles login/register toasts
 
 const registerFormSchema = z.object({
   email: z.string().email({ message: 'Please enter a valid email address.' }),
@@ -31,7 +31,7 @@ export default function RegisterPage() {
   const { register, user, isLoading: authLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { toast } = useToast();
+  // const { toast } = useToast(); // Toasts are now handled by AuthContext for register
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
@@ -52,14 +52,16 @@ export default function RegisterPage() {
       const redirectUrl = searchParams.get('redirect') || defaultRedirect;
       router.replace(redirectUrl);
     }
-  }, [user, authLoading, router, searchParams, toast]);
+  }, [user, authLoading, router, searchParams]);
 
   async function onSubmit(data: RegisterFormValues) {
-    try {
-      await register(data.email, data.password, 'user');
-    } catch (error) {
-      console.error("Register page submission error:", error);
+    const result = await register(data.email, data.password, 'user');
+     if (!result.success && result.message) {
+      // AuthContext's register function already handles toasting for specific errors.
+      // This console.error is for debugging if there's a message.
+      console.error("User register page submission error details:", result.message);
     }
+    // If registration is successful, onAuthStateChanged in AuthContext will handle redirection.
   }
   
   if (authLoading || (!authLoading && user)) {
