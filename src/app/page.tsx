@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -22,7 +23,7 @@ import { collection, addDoc, serverTimestamp, query, where, getDocs, orderBy, on
 
 
 const EXAM_DURATION_SECONDS = 60 * 30; // Default 30 minutes, will be overridden by exam specific duration
-const SNAPSHOT_AND_ANALYSIS_INTERVAL_MS = 5000; // Updated interval to 5 seconds
+const SNAPSHOT_AND_ANALYSIS_INTERVAL_MS = 1000; // Updated interval to 1 second
 const MAX_VIOLATIONS = 3; // Max violations before disqualification
 
 function ExamPageContent() {
@@ -456,6 +457,9 @@ function ExamPageContent() {
     };
 
     // Perform initial capture almost immediately, then set interval
+    if (analysisIntervalRef.current) { // Clear existing interval before setting a new one
+      clearInterval(analysisIntervalRef.current);
+    }
     captureAndAnalyze(); 
     analysisIntervalRef.current = setInterval(captureAndAnalyze, SNAPSHOT_AND_ANALYSIS_INTERVAL_MS);
 
@@ -464,7 +468,6 @@ function ExamPageContent() {
         clearInterval(analysisIntervalRef.current);
         analysisIntervalRef.current = null;
       }
-      // Camera tracks are stopped by exam end/disqualify/reset logic, not here.
     };
   }, [examStarted, hasCameraPermission, examSubmitted, isDisqualified, selectedExam, user, totalTimeSpent, currentQuestionIndex, recordViolation, logActivity]);
 
@@ -994,3 +997,4 @@ export default function ExamPage() {
     </AuthGuard>
   );
 }
+

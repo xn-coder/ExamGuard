@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, type FormEvent, useEffect, useCallback } from 'react';
@@ -24,7 +25,7 @@ interface AggregatedLog extends UserActivityLog {
   count: number;
 }
 
-const SNAPSHOT_AND_ANALYSIS_INTERVAL_MS = 5000; // 5 seconds, matches the value in src/app/page.tsx
+const SNAPSHOT_AND_ANALYSIS_INTERVAL_MS = 1000; // 1 second, matches the value in src/app/page.tsx
 
 function AdminPageContent() {
   const [whitelistedUsers, setWhitelistedUsers] = useState<WhitelistedUser[]>([]);
@@ -585,7 +586,7 @@ function AdminPageContent() {
           <Card className="shadow-xl">
             <CardHeader>
               <CardTitle className="flex items-center"><Video className="mr-2" />Live User Snapshots</CardTitle>
-              <CardDescription>View near real-time webcam snapshots of users currently taking exams you manage. Snapshots update every {SNAPSHOT_AND_ANALYSIS_INTERVAL_MS / 1000} seconds.</CardDescription>
+              <CardDescription>View near real-time webcam snapshots of users currently taking exams you manage. Snapshots update every {SNAPSHOT_AND_ANALYSIS_INTERVAL_MS / 1000} second(s).</CardDescription>
             </CardHeader>
             <CardContent>
               {liveSnapshots.length === 0 ? (
@@ -645,3 +646,4 @@ export default function AdminPage() {
     </AuthGuard>
   );
 }
+
