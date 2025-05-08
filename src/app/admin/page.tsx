@@ -159,14 +159,14 @@ function AdminPageContent() {
             );
           }
           setActivityLogs(logsList); // Already sorted by query
-        }, (error: any) => { // Added type :any to error for accessing .code and .message
+        }, (error: any) => { 
             console.error("Error fetching activity logs in real-time: ", error);
             if (error.code === 'failed-precondition' && error.message && error.message.toLowerCase().includes('index')) {
                 toast({
                     variant: 'destructive',
                     title: 'Database Index Required (Real-time)',
-                    description: 'The real-time activity log query requires a Firestore index. Please create it in your Firebase console. This usually involves indexing "adminId" and "timestamp" (descending) on the "activityLogs" collection.',
-                    duration: 15000, // Longer duration for important messages
+                    description: 'The real-time activity log query requires a Firestore index. Please create it in your Firebase console. This usually involves indexing "adminId" and "timstamp" (descending) on the "activityLogs" collection.',
+                    duration: 15000, 
                 });
             } else {
                 toast({ variant: 'destructive', title: 'Real-time Error', description: 'Could not fetch real-time activity logs.' });
