@@ -1,5 +1,6 @@
 
 
+
 export interface Question {
   id: string;
   question: string;
@@ -19,7 +20,7 @@ export interface WhitelistedUser {
   id: string; // Firestore document ID
   email: string;
   addedAt?: any; // Firebase ServerTimestamp for when the user was added
-  adminId?: string; // UID of the admin who whitelisted this user
+  adminId: string; // UID of the admin who whitelisted this user
 }
 
 export interface ScheduledExam {
@@ -28,7 +29,7 @@ export interface ScheduledExam {
   scheduledTime: string; // ISO date string
   durationMinutes: number;
   createdAt?: any; // Firebase ServerTimestamp for when the exam was created
-  adminId?: string; // UID of the admin who scheduled this exam
+  adminId: string; // UID of the admin who scheduled this exam - Made mandatory
   // rules?: string; // Potential future addition
 }
 
@@ -42,7 +43,7 @@ export interface UserActivityLog {
   timestamp: string; // ISO date string
   activityType: ActivityType;
   details: string;
-  adminId?: string; // UID of the admin who owns the exam/user related to this log
+  adminId: string; // UID of the admin who owns the exam/user related to this log
 }
 
 export interface DisqualifiedUser {
@@ -53,7 +54,7 @@ export interface DisqualifiedUser {
   disqualificationReason: string;
   disqualificationTime: string; // ISO date string
   evidence?: string[]; // URLs to screenshots/clips - conceptual for now
-  adminId?: string; // UID of the admin whose exam this user was disqualified from
+  adminId: string; // UID of the admin whose exam this user was disqualified from
 }
 
 export interface LiveSnapshot {
@@ -66,4 +67,5 @@ export interface LiveSnapshot {
   snapshotDataUri: string;
   updatedAt: any; // Firebase ServerTimestamp
 }
+
 

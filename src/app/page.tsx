@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -392,7 +393,7 @@ function ExamPageContent() {
   
   // AI Behavior Analysis and Live Snapshot Update
   useEffect(() => {
-    if (!examStarted || !hasCameraPermission || examSubmitted || isDisqualified || !selectedExam || !user) return;
+    if (!examStarted || !hasCameraPermission || examSubmitted || isDisqualified || !selectedExam || !user || !selectedExam.adminId) return;
 
     liveSnapshotDocIdRef.current = `${user.uid}_${selectedExam.id}`;
 
@@ -407,14 +408,14 @@ function ExamPageContent() {
           const webcamFeedDataUri = canvas.toDataURL('image/jpeg', 0.7); // Use JPEG and quality for smaller size
           
           // Update live snapshot in Firestore
-          if (liveSnapshotDocIdRef.current && selectedExam.adminId) {
+          if (liveSnapshotDocIdRef.current && selectedExam.adminId) { // Ensure adminId is available
             try {
               await setDoc(doc(db, 'liveSnapshots', liveSnapshotDocIdRef.current), {
                 userId: user.uid,
                 userEmail: user.email,
                 examId: selectedExam.id,
                 examName: selectedExam.name,
-                adminId: selectedExam.adminId,
+                adminId: selectedExam.adminId, // Crucial for admin filtering
                 snapshotDataUri: webcamFeedDataUri,
                 updatedAt: serverTimestamp(),
               }, { merge: true });
@@ -485,7 +486,7 @@ function ExamPageContent() {
 
 
   const handleStartExam = async (examToStart: ScheduledExam) => {
-    if (!user || !user.email || !examToStart || !examToStart.adminId ) {
+    if (!user || !user.email || !examToStart || !examToStart.adminId ) { // Ensure adminId is present
         setTimeout(() => {
             toast({ variant: 'destructive', title: 'Cannot Start Exam', description: 'User, exam details, or admin ID missing.'});
         }, 0);
